@@ -1,0 +1,40 @@
+<idea-plugin version="2">
+  <id>com.linuxgods.kreiger.intellij.idea.refactoring.constants.enum</id>
+  <name>Constants can be enum</name>
+  <version>1.0</version>
+  <vendor email="christoffer.hammarstrom@linuxgods.com" url="https://github.com/kreiger/intellij-idea-constants-can-be-enum">Christoffer Hammarström</vendor>
+
+  <description><![CDATA[
+      Converts constants to enum.
+    ]]></description>
+
+  <change-notes><![CDATA[
+    ]]>
+  </change-notes>
+
+  <!-- please see https://confluence.jetbrains.com/display/IDEADEV/Build+Number+Ranges for description -->
+  <idea-version since-build="131"/>
+
+  <!-- please see https://confluence.jetbrains.com/display/IDEADEV/Plugin+Compatibility+with+IntelliJ+Platform+Products
+       on how to target different products -->
+  <!-- uncomment to enable plugin in all products
+  <depends>com.intellij.modules.lang</depends>
+  -->
+
+  <extensions defaultExtensionNs="com.intellij">
+    <localInspection displayName="Convert constants to enum" enabledByDefault="true" implementationClass="com.linuxgods.kreiger.intellij.idea.constants.enumclass.ConvertConstantsToEnumInspection"
+            groupPath="Java" groupName="Java language level migration aids"/>
+  </extensions>
+
+  <application-components>
+    <!-- Add your application components here -->
+  </application-components>
+
+  <project-components>
+    <!-- Add your project components here -->
+  </project-components>
+
+  <actions>
+  </actions>
+
+</idea-plugin>
