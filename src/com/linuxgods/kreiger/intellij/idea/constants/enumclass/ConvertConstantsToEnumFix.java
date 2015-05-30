@@ -7,6 +7,7 @@ import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.project.Project;
 import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.CodeStyleManager;
+import com.intellij.psi.search.GlobalSearchScope;
 import org.jetbrains.annotations.Nls;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
@@ -90,6 +91,9 @@ class ConvertConstantsToEnumFix implements LocalQuickFix {
             valueMethodBody = "return ordinal()+" + initialLiteralInSequence + ";";
         }
         addMethodStatement(psiElementFactory, valueMethod, valueMethodBody);
+        Project project = psiClass.getProject();
+        PsiMethod toStringMethod = (PsiMethod) anEnum.add(psiElementFactory.createMethod("toString", PsiType.getJavaLangString(PsiManager.getInstance(project), GlobalSearchScope.projectScope(project)), anEnum));
+        addMethodStatement(psiElementFactory, toStringMethod, "return \"\"+value();");
         return anEnum;
     }
 
