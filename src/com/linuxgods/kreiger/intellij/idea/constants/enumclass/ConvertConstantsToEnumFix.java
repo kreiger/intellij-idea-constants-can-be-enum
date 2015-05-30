@@ -14,56 +14,52 @@ import org.jetbrains.annotations.Nullable;
 import java.util.*;
 
 class ConvertConstantsToEnumFix implements LocalQuickFix {
-    private final PsiClass psiClass;
     private final String enumName;
+    private boolean oneOfMultipleTypes;
     private Collection<Named<PsiField>> namedFields;
-    private final PsiType psiType;
+    private PsiType type;
 
-    public ConvertConstantsToEnumFix(PsiClass aClass, String enumName, Collection<Named<PsiField>> namedFields, PsiType psiType) {
-        this.psiClass = aClass;
+    public ConvertConstantsToEnumFix(String enumName, Collection<Named<PsiField>> namedFields, PsiType type, boolean oneOfMultipleTypes) {
         this.enumName = enumName;
         this.namedFields = namedFields;
-        this.psiType = psiType;
+        this.type = type;
+        this.oneOfMultipleTypes = oneOfMultipleTypes;
     }
 
     @Nls
     @NotNull
     @Override
     public String getName() {
-        return "Create enum named '" + enumName + "'";
+        return "Create enum named '" + enumName + "'"+(oneOfMultipleTypes ? " from "+type.getPresentableText()+" constants":"");
     }
 
     @NotNull
     @Override
     public String getFamilyName() {
-        return "Create enum named '" + enumName + "'";
+        return getName();
     }
 
     @Override
     public void applyFix(@NotNull final Project project, @NotNull ProblemDescriptor problemDescriptor) {
-        new WriteCommandAction<Object>(project, psiClass.getContainingFile()) {
+        final PsiField psiField = (PsiField) problemDescriptor.getPsiElement();
+        final PsiClass psiClass = psiField.getContainingClass();
+        new WriteCommandAction<Object>(project, psiField.getContainingFile()) {
             @Override
             protected void run(@NotNull Result result) throws Throwable {
                 final PsiElementFactory psiElementFactory = JavaPsiFacade.getElementFactory(project);
-                PsiClass anEnum = (PsiClass) psiClass.add(psiElementFactory.createEnum(enumName));
-                PsiMethod valueMethod = (PsiMethod) anEnum.add(psiElementFactory.createMethod("value", psiType, anEnum));
-                Integer initialLiteralInSequence = getInitialLiteralInSequence();
-                if (initialLiteralInSequence == null) {
-                    anEnum.add(psiElementFactory.createField("value", psiType));
-                    PsiMethod constructor = (PsiMethod) anEnum.add(psiElementFactory.createConstructor());
-                    constructor.getParameterList().replace(psiElementFactory.createParameterList(new String[]{"value"}, new PsiType[]{psiType}));
-                    addMethodStatement(psiElementFactory, constructor, "this.value = value;");
-                    addMethodStatement(psiElementFactory, valueMethod, "return value;");
-                } else if (initialLiteralInSequence == 0) {
-                    addMethodStatement(psiElementFactory, valueMethod, "return ordinal();");
-                } else {
-                    addMethodStatement(psiElementFactory, valueMethod, "return ordinal()+"+initialLiteralInSequence+";");
+                Collection<Named<PsiField>> namedFields = ConvertConstantsToEnumFix.this.namedFields;
+                SortedMap<Integer, Named<PsiField>> initialLiteralsInSequence = getInitialLiteralsInSequence(namedFields);
+                Integer initialLiteralInSequence = null;
+                if (null != initialLiteralsInSequence) {
+                    initialLiteralInSequence = initialLiteralsInSequence.firstKey();
+                    namedFields = initialLiteralsInSequence.values();
                 }
+                PsiClass anEnum = createEnum(psiElementFactory, psiClass, initialLiteralInSequence);
                 for (Named<PsiField> namedField : namedFields) {
                     String enumConstantName = namedField.getName();
                     PsiField psiField = namedField.getValue();
                     String enumConstantText = enumConstantName;
-                    if (initialLiteralInSequence == null) {
+                    if (initialLiteralsInSequence == null) {
                         enumConstantText+= "(" + psiField.getInitializer().getText() + ")";
                     }
                     anEnum.add(psiElementFactory.createEnumConstantFromText(enumConstantText, anEnum));
@@ -76,43 +72,67 @@ class ConvertConstantsToEnumFix implements LocalQuickFix {
         }.execute();
     }
 
-    private Integer getInitialLiteralInSequence() {
-        List<Named<PsiField>> namedFields;
-        try {
-            namedFields = sortedByInitializer(this.namedFields);
-        } catch (NullPointerException e) {
-            return null;
-        }
-
-        Integer initialLiteral = null;
-        Integer previousLiteral = null;
-
-        for (Named<PsiField> namedField : namedFields) {
-            PsiField psiField = namedField.getValue();
-            Integer intValue = getIntInitializer(psiField);
-            if (initialLiteral == null) {
-                initialLiteral = intValue;
-                previousLiteral = intValue;
-            } else if (!intValue.equals(++previousLiteral)) {
-                return null;
+    @NotNull
+    private PsiClass createEnum(PsiElementFactory psiElementFactory, PsiClass psiClass, Integer initialLiteralInSequence) {
+        PsiClass anEnum = (PsiClass) psiClass.add(psiElementFactory.createEnum(enumName));
+        PsiMethod valueMethod = (PsiMethod) anEnum.add(psiElementFactory.createMethod("value", type, anEnum));
+        String valueMethodBody;
+        if (initialLiteralInSequence == null) {
+            anEnum.add(psiElementFactory.createField("value", type));
+            for (PsiType type : getFieldTypes(namedFields)) {
+                PsiMethod constructor = addConstructor(psiElementFactory, anEnum, type);
+                addMethodStatement(psiElementFactory, constructor, "this.value = value;");
             }
+            valueMethodBody = "return value;";
+        } else if (initialLiteralInSequence == 0) {
+            valueMethodBody = "return ordinal();";
+        } else {
+            valueMethodBody = "return ordinal()+" + initialLiteralInSequence + ";";
         }
-        this.namedFields = namedFields;
-        return initialLiteral;
+        addMethodStatement(psiElementFactory, valueMethod, valueMethodBody);
+        return anEnum;
     }
 
     @NotNull
-    private List<Named<PsiField>> sortedByInitializer(Collection<Named<PsiField>> collection) {
-        List<Named<PsiField>> list = new ArrayList<Named<PsiField>>(collection);
-        Collections.sort(list, new Comparator<Named<PsiField>>() {
-            @Override
-            public int compare(Named<PsiField> o1, Named<PsiField> o2) {
-                Integer i1 = getIntInitializer(o1.getValue());
-                Integer i2 = getIntInitializer(o2.getValue());
-                return i1.compareTo(i2);
+    private Set<PsiType> getFieldTypes(Collection<Named<PsiField>> namedFields) {
+        Set<PsiType> types = new HashSet<PsiType>();
+        for (Named<PsiField> namedField : namedFields) {
+            types.add(namedField.getValue().getType());
+        }
+        return types;
+    }
+
+    private PsiMethod addConstructor(PsiElementFactory psiElementFactory, PsiClass anEnum, PsiType psiType) {
+        PsiMethod constructor = (PsiMethod) anEnum.add(psiElementFactory.createConstructor());
+        constructor.getParameterList().replace(psiElementFactory.createParameterList(new String[]{"value"}, new PsiType[]{psiType}));
+        return constructor;
+    }
+
+    private SortedMap<Integer, Named<PsiField>> getInitialLiteralsInSequence(Collection<Named<PsiField>> input) {
+        NavigableMap<Integer, Named<PsiField>> namedFields = sortedByInitializer(input);
+        if (null != namedFields && completeSequence(namedFields.navigableKeySet())) {
+            return namedFields;
+        }
+        return null;
+    }
+
+    private boolean completeSequence(SortedSet<Integer> initialLiterals) {
+        int firstValue = initialLiterals.first();
+        int lastValue = initialLiterals.last();
+        return lastValue - firstValue == initialLiterals.size() - 1;
+    }
+
+    @Nullable
+    private NavigableMap<Integer, Named<PsiField>> sortedByInitializer(Collection<Named<PsiField>> collection) {
+        NavigableMap<Integer,Named<PsiField>> result = new TreeMap<Integer, Named<PsiField>>();
+        for (Named<PsiField> namedField : collection) {
+            Integer intInitializer = getIntInitializer(namedField.getValue());
+            if (intInitializer == null) {
+                return null;
             }
-        });
-        return list;
+            result.put(intInitializer, namedField);
+        }
+        return result;
     }
 
     @Nullable
