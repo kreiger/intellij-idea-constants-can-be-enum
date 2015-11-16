@@ -5,6 +5,7 @@ import com.intellij.codeInspection.ProblemDescriptor;
 import com.intellij.openapi.application.Result;
 import com.intellij.openapi.command.WriteCommandAction;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.psi.*;
 import com.intellij.psi.codeStyle.CodeStyleManager;
 import com.intellij.psi.search.GlobalSearchScope;
@@ -57,13 +58,13 @@ class ConvertConstantsToEnumFix implements LocalQuickFix {
                 }
                 PsiClass anEnum = createEnum(psiElementFactory, psiClass, initialLiteralInSequence);
                 for (Named<PsiField> namedField : namedFields) {
-                    String enumConstantName = namedField.getName();
+                    String enumConstantName = StringUtil.sanitizeJavaIdentifier(namedField.getName());
                     PsiField psiField = namedField.getValue();
                     String enumConstantText = enumConstantName;
                     if (initialLiteralsInSequence == null) {
                         enumConstantText+= "(" + psiField.getInitializer().getText() + ")";
                     }
-                    anEnum.add(psiElementFactory.createEnumConstantFromText(enumConstantText, anEnum));
+                    anEnum.add(psiElementFactory.createEnumConstantFromText(enumConstantText+"\n", anEnum));
                     PsiExpression enumConstantReference = psiElementFactory.createExpressionFromText(enumName + "." + enumConstantName + ".value()", psiClass);
                     psiField.setInitializer(enumConstantReference);
                 }
