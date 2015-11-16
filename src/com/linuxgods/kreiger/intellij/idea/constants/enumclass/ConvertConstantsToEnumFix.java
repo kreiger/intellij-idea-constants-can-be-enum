@@ -134,6 +134,9 @@ class ConvertConstantsToEnumFix implements LocalQuickFix {
             if (intInitializer == null) {
                 return null;
             }
+            if (result.get(intInitializer) != null) {
+                return null;
+            }
             result.put(intInitializer, namedField);
         }
         return result;
